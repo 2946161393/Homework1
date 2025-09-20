@@ -1,0 +1,15 @@
+logging:
+  level:
+    org.springframework.cloud: INFO
+    com.example: INFO
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,refresh
+
+feature:
+  flags:
+    enable-audit: true
+    enable-caching: false
