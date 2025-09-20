@@ -101,4 +101,43 @@ public class DepartmentService {
 
         // Check if any employees are assigned to this department
         try {
-            PageResponse<EmployeeDTO> employees = employeeClient.getEmployees(id, 0
+            PageResponse<EmployeeDTO> employees = employeeClient.getEmployees(id, 0, 1);
+            if (employees.getTotalElements() > 0) {
+                throw new IllegalArgumentException(
+                        "Cannot delete department. " + employees.getTotalElements() +
+                                " employee(s) are still assigned to this department. " +
+                                "Please reassign or remove employees first."
+                );
+            }
+        } catch (Exception e) {
+            // If employee service is down, allow deletion but log warning
+            // In production, you might want to be more strict about this
+            System.err.println("Warning: Unable to check employees for department " + id + ": " + e.getMessage());
+        }
+
+        repository.deleteById(id);
+    }
+
+    public PageResponse<EmployeeDTO> getDepartmentEmployees(Long departmentId, Pageable pageable) {
+        // Verify department exists
+        if (!repository.existsById(departmentId)) {
+            throw new EntityNotFoundException("Department not found with id: " + departmentId);
+        }
+
+        try {
+            return employeeClient.getEmployees(departmentId, pageable.getPageNumber(), pageable.getPageSize());
+        } catch (Exception e) {
+            throw new RuntimeException("Failed to fetch employees for department: " + departmentId, e);
+        }
+    }
+
+    private DepartmentDTO toDTO(Department dept) {
+        return DepartmentDTO.builder()
+                .id(dept.getId())
+                .name(dept.getName())
+                .code(dept.getCode())
+                .description(dept.getDescription())
+                .managerEmail(dept.getManagerEmail())
+                .build();
+    }
+}
