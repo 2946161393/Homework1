@@ -1,6 +1,10 @@
 spring:
   cloud:
     gateway:
+      discovery:
+        locator:
+          enabled: true
+          lower-case-service-id: true
       routes:
         - id: employee-service
           uri: lb://EMPLOYEE-SERVICE
@@ -16,21 +20,15 @@ spring:
           filters:
             - RewritePath=/departments(?<segment>/?.*), /api/v1/departments${segment}
 
-        # Add project service route for bonus section
-        - id: project-service
-          uri: lb://PROJECT-SERVICE
-          predicates:
-            - Path=/projects/**
-          filters:
-            - RewritePath=/projects(?<segment>/?.*), /api/v1/projects${segment}
-
-server:
-  port: 8080
-
 eureka:
   client:
     service-url:
       defaultZone: http://localhost:8761/eureka
+    fetch-registry: true
+    register-with-eureka: true
+
+server:
+  port: 8080
 
 logging:
   level:
