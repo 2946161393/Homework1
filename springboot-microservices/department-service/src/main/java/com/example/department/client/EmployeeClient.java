@@ -11,8 +11,8 @@ public interface EmployeeClient {
 
     @GetMapping
     PageResponse<EmployeeDTO> getEmployees(
-            @RequestParam(required = false) Long departmentId,
-            @RequestParam(defaultValue = "0") int page,
-            @RequestParam(defaultValue = "20") int size
+            @RequestParam(value = "departmentId", required = false) Long departmentId,
+            @RequestParam(value = "page", defaultValue = "0") int page,
+            @RequestParam(value = "size", defaultValue = "20") int size
     );
 }
