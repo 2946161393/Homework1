@@ -1,4 +1,4 @@
-package com.example.department.repo;
+package com.example.department.repository;
 
 import com.example.department.domain.Department;
 import org.springframework.data.domain.Page;

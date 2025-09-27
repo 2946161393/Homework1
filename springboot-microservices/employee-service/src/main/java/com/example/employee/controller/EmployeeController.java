@@ -1,4 +1,4 @@
-package com.example.employee.web;
+package com.example.employee.controller;
 
 import com.example.employee.dto.*;
 import com.example.employee.service.EmployeeService;

@@ -1,15 +1,13 @@
 package com.example.department;
 
 import com.example.department.domain.Department;
-import com.example.department.repo.DepartmentRepository;
+import com.example.department.repository.DepartmentRepository;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
-import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
 import java.util.List;
-import java.util.Optional;
 
 import static org.assertj.core.api.Assertions.*;
 import static org.mockito.Mockito.*;

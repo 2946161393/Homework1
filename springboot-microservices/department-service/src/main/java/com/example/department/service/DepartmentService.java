@@ -5,7 +5,7 @@ import com.example.department.domain.Department;
 import com.example.department.dto.DepartmentDTO;
 import com.example.department.dto.PageResponse;
 import com.example.department.exception.*;
-import com.example.department.repo.DepartmentRepository;
+import com.example.department.repository.DepartmentRepository;
 import feign.FeignException;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
