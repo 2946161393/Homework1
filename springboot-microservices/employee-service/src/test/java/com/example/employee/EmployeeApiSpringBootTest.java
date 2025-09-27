@@ -1,9 +1,7 @@
 package com.example.employee;
 
 import com.example.employee.client.DepartmentClient;
-import com.example.employee.dto.EmployeeDTO;
-import com.example.employee.repo.EmployeeRepository;
-import com.fasterxml.jackson.databind.ObjectMapper;
+import com.example.employee.repository.EmployeeRepository;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;

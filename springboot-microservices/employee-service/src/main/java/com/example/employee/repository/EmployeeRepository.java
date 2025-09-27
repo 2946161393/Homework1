@@ -1,4 +1,4 @@
-package com.example.employee.repo;
+package com.example.employee.repository;
 
 import com.example.employee.domain.Employee;
 import org.springframework.data.domain.Page;
@@ -8,7 +8,6 @@ import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
 import java.util.List;
-import java.util.Optional;
 
 public interface EmployeeRepository extends JpaRepository<Employee, Long> {
     boolean existsByEmail(String email);

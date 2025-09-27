@@ -1,6 +1,6 @@
 package com.example.employee;
 
-import com.example.employee.repo.EmployeeRepository;
+import com.example.employee.repository.EmployeeRepository;
 import com.example.employee.client.DepartmentClient;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;

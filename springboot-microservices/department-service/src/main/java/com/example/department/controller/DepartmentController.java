@@ -1,4 +1,4 @@
-package com.example.department.web;
+package com.example.department.controller;
 
 import com.example.department.dto.DepartmentDTO;
 import com.example.department.dto.EmployeeDTO;

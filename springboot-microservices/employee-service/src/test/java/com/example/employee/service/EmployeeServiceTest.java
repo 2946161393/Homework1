@@ -3,7 +3,7 @@ package com.example.employee.service;
 import com.example.employee.client.DepartmentClient;
 import com.example.employee.domain.Employee;
 import com.example.employee.dto.EmployeeDTO;
-import com.example.employee.repo.EmployeeRepository;
+import com.example.employee.repository.EmployeeRepository;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.DisplayNameGeneration;
 import org.junit.jupiter.api.DisplayNameGenerator;

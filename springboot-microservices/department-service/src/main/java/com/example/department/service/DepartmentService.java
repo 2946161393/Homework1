@@ -3,141 +3,291 @@ package com.example.department.service;
 import com.example.department.client.EmployeeClient;
 import com.example.department.domain.Department;
 import com.example.department.dto.DepartmentDTO;
-import com.example.department.dto.EmployeeDTO;
 import com.example.department.dto.PageResponse;
+import com.example.department.exception.*;
 import com.example.department.repo.DepartmentRepository;
-import jakarta.persistence.EntityNotFoundException;
-import lombok.RequiredArgsConstructor;
-import org.springframework.data.domain.Page;
-import org.springframework.data.domain.Pageable;
-import org.springframework.stereotype.Service;
-import org.springframework.transaction.annotation.Transactional;
+import feign.FeignException;
+import org.junit.jupiter.api.DisplayName;
+import org.junit.jupiter.api.Nested;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.ExtendWith;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
+import org.mockito.InjectMocks;
+import org.mockito.Mock;
+import org.mockito.junit.jupiter.MockitoExtension;
 
-@Service
-@RequiredArgsConstructor
-@Transactional(readOnly = true)
-public class DepartmentService {
+import java.util.Optional;
 
-    private final DepartmentRepository repository;
-    private final EmployeeClient employeeClient;
+import static org.assertj.core.api.Assertions.*;
+import static org.mockito.Mockito.*;
 
-    public PageResponse<DepartmentDTO> getAll(Pageable pageable, String name, String code) {
-        Page<Department> page = repository.findWithFilters(name, code, pageable);
-        Page<DepartmentDTO> dtoPage = page.map(this::toDTO);
-        return PageResponse.from(dtoPage);
-    }
+@ExtendWith(MockitoExtension.class)
+@DisplayName("DepartmentService")
+class DepartmentServiceTest {
 
-    public DepartmentDTO getById(Long id) {
-        Department dept = repository.findById(id)
-                .orElseThrow(() -> new EntityNotFoundException("Department not found with id: " + id));
-        return toDTO(dept);
-    }
+    @Mock
+    private DepartmentRepository repository;
 
-    public DepartmentDTO getByCode(String code) {
-        Department dept = repository.findByCodeIgnoreCase(code)
-                .orElseThrow(() -> new EntityNotFoundException("Department not found with code: " + code));
-        return toDTO(dept);
-    }
+    @Mock
+    private EmployeeClient employeeClient;
 
-    @Transactional
-    public DepartmentDTO create(DepartmentDTO dto) {
-        if (repository.existsByCode(dto.getCode())) {
-            throw new IllegalArgumentException("Department code already exists: " + dto.getCode());
+    @InjectMocks
+    private DepartmentService service;
+
+    @Nested
+    @DisplayName("Create Department")
+    class CreateDepartment {
+
+        @Test
+        @DisplayName("creates department successfully")
+        void create_department_successfully() {
+            DepartmentDTO dto = DepartmentDTO.builder()
+                    .name("Engineering")
+                    .code("ENG")
+                    .description("Software development")
+                    .build();
+
+            when(repository.existsByCode("ENG")).thenReturn(false);
+            when(repository.save(any(Department.class)))
+                    .thenAnswer(inv -> { Department d = inv.getArgument(0); d.setId(1L); return d; });
+
+            var result = service.create(dto);
+
+            assertThat(result.getId()).isEqualTo(1L);
+            assertThat(result.getCode()).isEqualTo("ENG");
         }
 
-        Department dept = Department.builder()
-                .name(dto.getName())
-                .code(dto.getCode().toUpperCase())
-                .description(dto.getDescription())
-                .managerEmail(dto.getManagerEmail())
-                .build();
+        @Test
+        @DisplayName("throws DuplicateResourceException for existing code")
+        void create_throws_for_duplicate_code() {
+            DepartmentDTO dto = DepartmentDTO.builder()
+                    .name("Engineering")
+                    .code("ENG")
+                    .build();
 
-        dept = repository.save(dept);
-        return toDTO(dept);
-    }
+            when(repository.existsByCode("ENG")).thenReturn(true);
 
-    @Transactional
-    public DepartmentDTO update(Long id, DepartmentDTO dto) {
-        Department existing = repository.findById(id)
-                .orElseThrow(() -> new EntityNotFoundException("Department not found with id: " + id));
-
-        if (repository.existsByCodeAndIdNot(dto.getCode(), id)) {
-            throw new IllegalArgumentException("Department code already exists: " + dto.getCode());
+            assertThatThrownBy(() -> service.create(dto))
+                    .isInstanceOf(DuplicateResourceException.class)
+                    .hasMessageContaining("Department already exists");
         }
 
-        existing.setName(dto.getName());
-        existing.setCode(dto.getCode().toUpperCase());
-        existing.setDescription(dto.getDescription());
-        existing.setManagerEmail(dto.getManagerEmail());
+        @ParameterizedTest
+        @ValueSource(strings = {"", "   ", "AB", "THIS_CODE_IS_WAY_TOO_LONG_FOR_VALIDATION"})
+        @DisplayName("throws ValidationException for invalid codes")
+        void create_throws_for_invalid_code(String invalidCode) {
+            DepartmentDTO dto = DepartmentDTO.builder()
+                    .name("Engineering")
+                    .code(invalidCode)
+                    .build();
 
-        existing = repository.save(existing);
-        return toDTO(existing);
-    }
-
-    @Transactional
-    public DepartmentDTO patch(Long id, DepartmentDTO dto) {
-        Department existing = repository.findById(id)
-                .orElseThrow(() -> new EntityNotFoundException("Department not found with id: " + id));
-
-        if (dto.getName() != null) existing.setName(dto.getName());
-        if (dto.getCode() != null) {
-            if (repository.existsByCodeAndIdNot(dto.getCode(), id)) {
-                throw new IllegalArgumentException("Department code already exists: " + dto.getCode());
-            }
-            existing.setCode(dto.getCode().toUpperCase());
-        }
-        if (dto.getDescription() != null) existing.setDescription(dto.getDescription());
-        if (dto.getManagerEmail() != null) existing.setManagerEmail(dto.getManagerEmail());
-
-        existing = repository.save(existing);
-        return toDTO(existing);
-    }
-
-    @Transactional
-    public void delete(Long id) {
-        if (!repository.existsById(id)) {
-            throw new EntityNotFoundException("Department not found with id: " + id);
-        }
-
-        // Check if any employees are assigned to this department
-        try {
-            PageResponse<EmployeeDTO> employees = employeeClient.getEmployees(id, 0, 1);
-            if (employees.getTotalElements() > 0) {
-                throw new IllegalArgumentException(
-                        "Cannot delete department. " + employees.getTotalElements() +
-                                " employee(s) are still assigned to this department. " +
-                                "Please reassign or remove employees first."
-                );
-            }
-        } catch (Exception e) {
-            // If employee service is down, allow deletion but log warning
-            // In production, you might want to be more strict about this
-            System.err.println("Warning: Unable to check employees for department " + id + ": " + e.getMessage());
-        }
-
-        repository.deleteById(id);
-    }
-
-    public PageResponse<EmployeeDTO> getDepartmentEmployees(Long departmentId, Pageable pageable) {
-        // Verify department exists
-        if (!repository.existsById(departmentId)) {
-            throw new EntityNotFoundException("Department not found with id: " + departmentId);
-        }
-
-        try {
-            return employeeClient.getEmployees(departmentId, pageable.getPageNumber(), pageable.getPageSize());
-        } catch (Exception e) {
-            throw new RuntimeException("Failed to fetch employees for department: " + departmentId, e);
+            assertThatThrownBy(() -> service.create(dto))
+                    .isInstanceOf(ValidationException.class);
         }
     }
 
-    private DepartmentDTO toDTO(Department dept) {
-        return DepartmentDTO.builder()
-                .id(dept.getId())
-                .name(dept.getName())
-                .code(dept.getCode())
-                .description(dept.getDescription())
-                .managerEmail(dept.getManagerEmail())
-                .build();
+    @Nested
+    @DisplayName("Delete Department")
+    class DeleteDepartment {
+
+        @Test
+        @DisplayName("deletes department successfully when no employees")
+        void delete_department_successfully() {
+            Long departmentId = 1L;
+            PageResponse<Object> emptyResponse = new PageResponse<>();
+            emptyResponse.setTotalElements(0);
+
+            when(repository.existsById(departmentId)).thenReturn(true);
+            when(employeeClient.getEmployees(departmentId, 0, 1)).thenReturn(emptyResponse);
+
+            assertThatNoException().isThrownBy(() -> service.delete(departmentId));
+
+            verify(repository).deleteById(departmentId);
+        }
+
+        @Test
+        @DisplayName("throws DepartmentDeletionException when employees exist")
+        void delete_throws_when_employees_exist() {
+            Long departmentId = 1L;
+            PageResponse<Object> responseWithEmployees = new PageResponse<>();
+            responseWithEmployees.setTotalElements(5);
+
+            when(repository.existsById(departmentId)).thenReturn(true);
+            when(employeeClient.getEmployees(departmentId, 0, 1)).thenReturn(responseWithEmployees);
+
+            assertThatThrownBy(() -> service.delete(departmentId))
+                    .isInstanceOf(DepartmentDeletionException.class)
+                    .hasMessageContaining("5 employee(s) are still assigned");
+        }
+
+        @Test
+        @DisplayName("throws ResourceNotFoundException when department not found")
+        void delete_throws_when_not_found() {
+            Long departmentId = 999L;
+            when(repository.existsById(departmentId)).thenReturn(false);
+
+            assertThatThrownBy(() -> service.delete(departmentId))
+                    .isInstanceOf(ResourceNotFoundException.class);
+        }
+
+        @Test
+        @DisplayName("handles employee service failure gracefully")
+        void delete_handles_employee_service_failure() {
+            Long departmentId = 1L;
+            when(repository.existsById(departmentId)).thenReturn(true);
+            when(employeeClient.getEmployees(departmentId, 0, 1))
+                    .thenThrow(FeignException.InternalServerError.class);
+
+            // Should proceed with deletion despite service failure
+            assertThatNoException().isThrownBy(() -> service.delete(departmentId));
+
+            verify(repository).deleteById(departmentId);
+        }
+    }
+
+    @Nested
+    @DisplayName("Get Department")
+    class GetDepartment {
+
+        @Test
+        @DisplayName("returns department when found by id")
+        void getById_returns_department() {
+            Long departmentId = 1L;
+            Department department = Department.builder()
+                    .id(departmentId)
+                    .name("Engineering")
+                    .code("ENG")
+                    .build();
+
+            when(repository.findById(departmentId)).thenReturn(Optional.of(department));
+
+            var result = service.getById(departmentId);
+
+            assertThat(result.getId()).isEqualTo(departmentId);
+            assertThat(result.getName()).isEqualTo("Engineering");
+        }
+
+        @Test
+        @DisplayName("returns department when found by code")
+        void getByCode_returns_department() {
+            String code = "ENG";
+            Department department = Department.builder()
+                    .id(1L)
+                    .name("Engineering")
+                    .code(code)
+                    .build();
+
+            when(repository.findByCodeIgnoreCase(code)).thenReturn(Optional.of(department));
+
+            var result = service.getByCode(code);
+
+            assertThat(result.getCode()).isEqualTo(code);
+            assertThat(result.getName()).isEqualTo("Engineering");
+        }
+
+        @Test
+        @DisplayName("throws ResourceNotFoundException when not found")
+        void getById_throws_when_not_found() {
+            Long departmentId = 999L;
+            when(repository.findById(departmentId)).thenReturn(Optional.empty());
+
+            assertThatThrownBy(() -> service.getById(departmentId))
+                    .isInstanceOf(ResourceNotFoundException.class)
+                    .hasMessageContaining("Department not found with id: 999");
+        }
+    }
+
+    @Nested
+    @DisplayName("Update Department")
+    class UpdateDepartment {
+
+        @Test
+        @DisplayName("updates department successfully")
+        void update_department_successfully() {
+            Long departmentId = 1L;
+            Department existing = Department.builder()
+                    .id(departmentId)
+                    .name("Old Name")
+                    .code("OLD")
+                    .build();
+
+            DepartmentDTO updateDto = DepartmentDTO.builder()
+                    .name("New Name")
+                    .code("NEW")
+                    .description("Updated description")
+                    .build();
+
+            when(repository.findById(departmentId)).thenReturn(Optional.of(existing));
+            when(repository.existsByCodeAndIdNot("NEW", departmentId)).thenReturn(false);
+            when(repository.save(any(Department.class))).thenReturn(existing);
+
+            var result = service.update(departmentId, updateDto);
+
+            assertThat(result.getName()).isEqualTo("New Name");
+            assertThat(result.getCode()).isEqualTo("NEW");
+        }
+
+        @Test
+        @DisplayName("throws when department not found")
+        void update_throws_when_not_found() {
+            Long departmentId = 999L;
+            DepartmentDTO updateDto = DepartmentDTO.builder()
+                    .name("New Name")
+                    .code("NEW")
+                    .build();
+
+            when(repository.findById(departmentId)).thenReturn(Optional.empty());
+
+            assertThatThrownBy(() -> service.update(departmentId, updateDto))
+                    .isInstanceOf(ResourceNotFoundException.class);
+        }
+    }
+
+    @Nested
+    @DisplayName("Validation")
+    class Validation {
+
+        @ParameterizedTest
+        @ValueSource(strings = {"invalid-email", "test@", "@example.com", "test.example.com"})
+        @DisplayName("throws ValidationException for invalid email formats")
+        void patch_throws_for_invalid_email(String invalidEmail) {
+            Long departmentId = 1L;
+            Department existing = Department.builder()
+                    .id(departmentId)
+                    .name("Engineering")
+                    .code("ENG")
+                    .build();
+
+            DepartmentDTO patchDto = DepartmentDTO.builder()
+                    .managerEmail(invalidEmail)
+                    .build();
+
+            when(repository.findById(departmentId)).thenReturn(Optional.of(existing));
+
+            assertThatThrownBy(() -> service.patch(departmentId, patchDto))
+                    .isInstanceOf(ValidationException.class)
+                    .hasMessageContaining("Invalid manager email format");
+        }
+
+        @Test
+        @DisplayName("accepts valid email formats")
+        void patch_accepts_valid_email() {
+            Long departmentId = 1L;
+            Department existing = Department.builder()
+                    .id(departmentId)
+                    .name("Engineering")
+                    .code("ENG")
+                    .build();
+
+            DepartmentDTO patchDto = DepartmentDTO.builder()
+                    .managerEmail("manager@example.com")
+                    .build();
+
+            when(repository.findById(departmentId)).thenReturn(Optional.of(existing));
+            when(repository.save(any(Department.class))).thenReturn(existing);
+
+            assertThatNoException().isThrownBy(() -> service.patch(departmentId, patchDto));
+        }
     }
 }

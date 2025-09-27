@@ -1,4 +1,4 @@
-package com.example.department.web;
+package com.example.department.controller;
 
 import com.example.department.domain.Department;
 import com.example.department.repo.DepartmentRepository;
@@ -11,7 +11,6 @@ import org.springframework.http.MediaType;
 import org.springframework.test.web.servlet.MockMvc;
 
 import java.util.List;
-import java.util.Optional;
 
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.when;
