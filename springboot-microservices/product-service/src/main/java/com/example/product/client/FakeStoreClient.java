@@ -1,10 +1,12 @@
 package com.example.product.client;
 
+import com.example.product.dto.ProductDTO;
+
 public class FakeStoreClient {
 }
 package com.example.product.client;
 
-import com.example.product.dto.ProductDTO;
+import ProductDTO;
 import io.github.resilience4j.circuitbreaker.annotation.CircuitBreaker;
 import io.github.resilience4j.retry.annotation.Retry;
 import lombok.RequiredArgsConstructor;

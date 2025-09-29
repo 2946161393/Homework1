@@ -1,293 +1,285 @@
 package com.example.department.service;
 
+public class DepartmentService {
+}
+package com.example.department.service;
+
 import com.example.department.client.EmployeeClient;
 import com.example.department.domain.Department;
 import com.example.department.dto.DepartmentDTO;
+import com.example.department.dto.EmployeeDTO;
 import com.example.department.dto.PageResponse;
-import com.example.department.exception.*;
 import com.example.department.repository.DepartmentRepository;
+
+import com.example.exception.common.BusinessException;
+import com.example.exception.common.ValidationException;
+import com.example.exception.resource.DuplicateResourceException;
+import com.example.exception.resource.ResourceNotFoundException;
+import com.example.exception.external.ExternalServiceException;
+
 import feign.FeignException;
-import org.junit.jupiter.api.DisplayName;
-import org.junit.jupiter.api.Nested;
-import org.junit.jupiter.api.Test;
-import org.junit.jupiter.api.extension.ExtendWith;
-import org.junit.jupiter.params.ParameterizedTest;
-import org.junit.jupiter.params.provider.ValueSource;
-import org.mockito.InjectMocks;
-import org.mockito.Mock;
-import org.mockito.junit.jupiter.MockitoExtension;
+import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
+import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 
-import java.util.Optional;
+import java.util.regex.Pattern;
 
-import static org.assertj.core.api.Assertions.*;
-import static org.mockito.Mockito.*;
+/**
+ * Department Service
+ * Handles business logic for department operations
+ */
+@Slf4j
+@Service
+@RequiredArgsConstructor
+@Transactional(readOnly = true)
+public class DepartmentService {
 
-@ExtendWith(MockitoExtension.class)
-@DisplayName("DepartmentService")
-class DepartmentServiceTest {
+    private final DepartmentRepository repository;
+    private final EmployeeClient employeeClient;
 
-    @Mock
-    private DepartmentRepository repository;
+    private static final Pattern EMAIL_PATTERN = Pattern.compile(
+            "^[A-Za-z0-9+_.-]+@[A-Za-z0-9.-]+\\.[A-Za-z]{2,}$"
+    );
 
-    @Mock
-    private EmployeeClient employeeClient;
+    /**
+     * Get all departments with pagination and filters
+     */
+    public PageResponse<DepartmentDTO> getAll(Pageable pageable, String name, String code) {
+        log.debug("Fetching departments with filters - name: {}, code: {}", name, code);
 
-    @InjectMocks
-    private DepartmentService service;
+        Page<Department> page = repository.findWithFilters(name, code, pageable);
+        Page<DepartmentDTO> dtoPage = page.map(this::toDTO);
 
-    @Nested
-    @DisplayName("Create Department")
-    class CreateDepartment {
+        return PageResponse.from(dtoPage);
+    }
 
-        @Test
-        @DisplayName("creates department successfully")
-        void create_department_successfully() {
-            DepartmentDTO dto = DepartmentDTO.builder()
-                    .name("Engineering")
-                    .code("ENG")
-                    .description("Software development")
-                    .build();
+    /**
+     * Get department by ID
+     */
+    public DepartmentDTO getById(Long id) {
+        log.debug("Fetching department with id: {}", id);
 
-            when(repository.existsByCode("ENG")).thenReturn(false);
-            when(repository.save(any(Department.class)))
-                    .thenAnswer(inv -> { Department d = inv.getArgument(0); d.setId(1L); return d; });
+        Department department = repository.findById(id)
+                .orElseThrow(() -> new ResourceNotFoundException("Department", id));
 
-            var result = service.create(dto);
+        return toDTO(department);
+    }
 
-            assertThat(result.getId()).isEqualTo(1L);
-            assertThat(result.getCode()).isEqualTo("ENG");
+    /**
+     * Get department by code (case-insensitive)
+     */
+    public DepartmentDTO getByCode(String code) {
+        log.debug("Fetching department with code: {}", code);
+
+        Department department = repository.findByCodeIgnoreCase(code)
+                .orElseThrow(() -> new ResourceNotFoundException(
+                        String.format("Department not found with code: %s", code)));
+
+        return toDTO(department);
+    }
+
+    /**
+     * Create new department
+     */
+    @Transactional
+    public DepartmentDTO create(DepartmentDTO dto) {
+        log.info("Creating department with code: {}", dto.getCode());
+
+        // Validate code format
+        validateCode(dto.getCode());
+
+        // Check for duplicate code
+        if (repository.existsByCode(dto.getCode())) {
+            throw new DuplicateResourceException("Department", dto.getCode());
         }
 
-        @Test
-        @DisplayName("throws DuplicateResourceException for existing code")
-        void create_throws_for_duplicate_code() {
-            DepartmentDTO dto = DepartmentDTO.builder()
-                    .name("Engineering")
-                    .code("ENG")
-                    .build();
-
-            when(repository.existsByCode("ENG")).thenReturn(true);
-
-            assertThatThrownBy(() -> service.create(dto))
-                    .isInstanceOf(DuplicateResourceException.class)
-                    .hasMessageContaining("Department already exists");
+        // Validate manager email if provided
+        if (dto.getManagerEmail() != null && !dto.getManagerEmail().trim().isEmpty()) {
+            validateEmail(dto.getManagerEmail());
         }
 
-        @ParameterizedTest
-        @ValueSource(strings = {"", "   ", "AB", "THIS_CODE_IS_WAY_TOO_LONG_FOR_VALIDATION"})
-        @DisplayName("throws ValidationException for invalid codes")
-        void create_throws_for_invalid_code(String invalidCode) {
-            DepartmentDTO dto = DepartmentDTO.builder()
-                    .name("Engineering")
-                    .code(invalidCode)
-                    .build();
+        Department department = Department.builder()
+                .name(dto.getName())
+                .code(dto.getCode())
+                .description(dto.getDescription())
+                .managerEmail(dto.getManagerEmail())
+                .build();
 
-            assertThatThrownBy(() -> service.create(dto))
-                    .isInstanceOf(ValidationException.class);
+        department = repository.save(department);
+        log.info("Created department with id: {}", department.getId());
+
+        return toDTO(department);
+    }
+
+    /**
+     * Update existing department
+     */
+    @Transactional
+    public DepartmentDTO update(Long id, DepartmentDTO dto) {
+        log.info("Updating department with id: {}", id);
+
+        Department existing = repository.findById(id)
+                .orElseThrow(() -> new ResourceNotFoundException("Department", id));
+
+        // Validate code format
+        validateCode(dto.getCode());
+
+        // Check for duplicate code (excluding current department)
+        if (repository.existsByCodeAndIdNot(dto.getCode(), id)) {
+            throw new DuplicateResourceException("Department", dto.getCode());
+        }
+
+        // Validate manager email if provided
+        if (dto.getManagerEmail() != null && !dto.getManagerEmail().trim().isEmpty()) {
+            validateEmail(dto.getManagerEmail());
+        }
+
+        existing.setName(dto.getName());
+        existing.setCode(dto.getCode());
+        existing.setDescription(dto.getDescription());
+        existing.setManagerEmail(dto.getManagerEmail());
+
+        existing = repository.save(existing);
+        log.info("Updated department with id: {}", existing.getId());
+
+        return toDTO(existing);
+    }
+
+    /**
+     * Partially update department (PATCH)
+     */
+    @Transactional
+    public DepartmentDTO patch(Long id, DepartmentDTO dto) {
+        log.info("Patching department with id: {}", id);
+
+        Department existing = repository.findById(id)
+                .orElseThrow(() -> new ResourceNotFoundException("Department", id));
+
+        if (dto.getName() != null) {
+            existing.setName(dto.getName());
+        }
+
+        if (dto.getCode() != null) {
+            validateCode(dto.getCode());
+            if (repository.existsByCodeAndIdNot(dto.getCode(), id)) {
+                throw new DuplicateResourceException("Department", dto.getCode());
+            }
+            existing.setCode(dto.getCode());
+        }
+
+        if (dto.getDescription() != null) {
+            existing.setDescription(dto.getDescription());
+        }
+
+        if (dto.getManagerEmail() != null) {
+            if (!dto.getManagerEmail().trim().isEmpty()) {
+                validateEmail(dto.getManagerEmail());
+            }
+            existing.setManagerEmail(dto.getManagerEmail());
+        }
+
+        existing = repository.save(existing);
+        log.info("Patched department with id: {}", existing.getId());
+
+        return toDTO(existing);
+    }
+
+    /**
+     * Delete department (only if no employees assigned)
+     */
+    @Transactional
+    public void delete(Long id) {
+        log.info("Deleting department with id: {}", id);
+
+        if (!repository.existsById(id)) {
+            throw new ResourceNotFoundException("Department", id);
+        }
+
+        // Check if department has employees
+        try {
+            PageResponse<EmployeeDTO> employees = employeeClient.getEmployees(id, 0, 1);
+            if (employees.getTotalElements() > 0) {
+                throw new BusinessException(
+                        String.format("Cannot delete department %d: %d employee(s) are still assigned to this department",
+                                id, employees.getTotalElements()),
+                        "DEPARTMENT_HAS_EMPLOYEES");
+            }
+        } catch (FeignException.NotFound e) {
+            // Department has no employees, safe to delete
+            log.debug("No employees found for department {}", id);
+        } catch (FeignException e) {
+            // If employee service is down, log warning but proceed with deletion
+            log.warn("Could not verify employees for department {}: {}. Proceeding with deletion.",
+                    id, e.getMessage());
+        }
+
+        repository.deleteById(id);
+        log.info("Deleted department with id: {}", id);
+    }
+
+    /**
+     * Get employees in a department
+     */
+    public PageResponse<EmployeeDTO> getDepartmentEmployees(Long departmentId, Pageable pageable) {
+        log.debug("Fetching employees for department: {}", departmentId);
+
+        // Verify department exists
+        if (!repository.existsById(departmentId)) {
+            throw new ResourceNotFoundException("Department", departmentId);
+        }
+
+        try {
+            return employeeClient.getEmployees(departmentId, pageable.getPageNumber(), pageable.getPageSize());
+        } catch (FeignException.NotFound e) {
+            log.warn("No employees found for department {}", departmentId);
+            return new PageResponse<>();
+        } catch (FeignException e) {
+            log.error("Error fetching employees for department {}: {}", departmentId, e.getMessage());
+            throw new ExternalServiceException("employee-service",
+                    "Unable to fetch employees", e.status());
         }
     }
 
-    @Nested
-    @DisplayName("Delete Department")
-    class DeleteDepartment {
-
-        @Test
-        @DisplayName("deletes department successfully when no employees")
-        void delete_department_successfully() {
-            Long departmentId = 1L;
-            PageResponse<Object> emptyResponse = new PageResponse<>();
-            emptyResponse.setTotalElements(0);
-
-            when(repository.existsById(departmentId)).thenReturn(true);
-            when(employeeClient.getEmployees(departmentId, 0, 1)).thenReturn(emptyResponse);
-
-            assertThatNoException().isThrownBy(() -> service.delete(departmentId));
-
-            verify(repository).deleteById(departmentId);
+    /**
+     * Validate department code format
+     */
+    private void validateCode(String code) {
+        if (code == null || code.trim().isEmpty()) {
+            throw new ValidationException("code", "Department code cannot be empty");
         }
 
-        @Test
-        @DisplayName("throws DepartmentDeletionException when employees exist")
-        void delete_throws_when_employees_exist() {
-            Long departmentId = 1L;
-            PageResponse<Object> responseWithEmployees = new PageResponse<>();
-            responseWithEmployees.setTotalElements(5);
-
-            when(repository.existsById(departmentId)).thenReturn(true);
-            when(employeeClient.getEmployees(departmentId, 0, 1)).thenReturn(responseWithEmployees);
-
-            assertThatThrownBy(() -> service.delete(departmentId))
-                    .isInstanceOf(DepartmentDeletionException.class)
-                    .hasMessageContaining("5 employee(s) are still assigned");
+        if (code.length() < 3 || code.length() > 20) {
+            throw new ValidationException("code", "Department code must be between 3 and 20 characters");
         }
 
-        @Test
-        @DisplayName("throws ResourceNotFoundException when department not found")
-        void delete_throws_when_not_found() {
-            Long departmentId = 999L;
-            when(repository.existsById(departmentId)).thenReturn(false);
-
-            assertThatThrownBy(() -> service.delete(departmentId))
-                    .isInstanceOf(ResourceNotFoundException.class);
-        }
-
-        @Test
-        @DisplayName("handles employee service failure gracefully")
-        void delete_handles_employee_service_failure() {
-            Long departmentId = 1L;
-            when(repository.existsById(departmentId)).thenReturn(true);
-            when(employeeClient.getEmployees(departmentId, 0, 1))
-                    .thenThrow(FeignException.InternalServerError.class);
-
-            // Should proceed with deletion despite service failure
-            assertThatNoException().isThrownBy(() -> service.delete(departmentId));
-
-            verify(repository).deleteById(departmentId);
+        // Optional: Validate code format (alphanumeric with hyphens/underscores)
+        if (!code.matches("^[A-Za-z0-9_-]+$")) {
+            throw new ValidationException("code", "Department code can only contain letters, numbers, hyphens, and underscores");
         }
     }
 
-    @Nested
-    @DisplayName("Get Department")
-    class GetDepartment {
-
-        @Test
-        @DisplayName("returns department when found by id")
-        void getById_returns_department() {
-            Long departmentId = 1L;
-            Department department = Department.builder()
-                    .id(departmentId)
-                    .name("Engineering")
-                    .code("ENG")
-                    .build();
-
-            when(repository.findById(departmentId)).thenReturn(Optional.of(department));
-
-            var result = service.getById(departmentId);
-
-            assertThat(result.getId()).isEqualTo(departmentId);
-            assertThat(result.getName()).isEqualTo("Engineering");
-        }
-
-        @Test
-        @DisplayName("returns department when found by code")
-        void getByCode_returns_department() {
-            String code = "ENG";
-            Department department = Department.builder()
-                    .id(1L)
-                    .name("Engineering")
-                    .code(code)
-                    .build();
-
-            when(repository.findByCodeIgnoreCase(code)).thenReturn(Optional.of(department));
-
-            var result = service.getByCode(code);
-
-            assertThat(result.getCode()).isEqualTo(code);
-            assertThat(result.getName()).isEqualTo("Engineering");
-        }
-
-        @Test
-        @DisplayName("throws ResourceNotFoundException when not found")
-        void getById_throws_when_not_found() {
-            Long departmentId = 999L;
-            when(repository.findById(departmentId)).thenReturn(Optional.empty());
-
-            assertThatThrownBy(() -> service.getById(departmentId))
-                    .isInstanceOf(ResourceNotFoundException.class)
-                    .hasMessageContaining("Department not found with id: 999");
+    /**
+     * Validate email format
+     */
+    private void validateEmail(String email) {
+        if (!EMAIL_PATTERN.matcher(email).matches()) {
+            throw new ValidationException("managerEmail", "Invalid manager email format");
         }
     }
 
-    @Nested
-    @DisplayName("Update Department")
-    class UpdateDepartment {
-
-        @Test
-        @DisplayName("updates department successfully")
-        void update_department_successfully() {
-            Long departmentId = 1L;
-            Department existing = Department.builder()
-                    .id(departmentId)
-                    .name("Old Name")
-                    .code("OLD")
-                    .build();
-
-            DepartmentDTO updateDto = DepartmentDTO.builder()
-                    .name("New Name")
-                    .code("NEW")
-                    .description("Updated description")
-                    .build();
-
-            when(repository.findById(departmentId)).thenReturn(Optional.of(existing));
-            when(repository.existsByCodeAndIdNot("NEW", departmentId)).thenReturn(false);
-            when(repository.save(any(Department.class))).thenReturn(existing);
-
-            var result = service.update(departmentId, updateDto);
-
-            assertThat(result.getName()).isEqualTo("New Name");
-            assertThat(result.getCode()).isEqualTo("NEW");
-        }
-
-        @Test
-        @DisplayName("throws when department not found")
-        void update_throws_when_not_found() {
-            Long departmentId = 999L;
-            DepartmentDTO updateDto = DepartmentDTO.builder()
-                    .name("New Name")
-                    .code("NEW")
-                    .build();
-
-            when(repository.findById(departmentId)).thenReturn(Optional.empty());
-
-            assertThatThrownBy(() -> service.update(departmentId, updateDto))
-                    .isInstanceOf(ResourceNotFoundException.class);
-        }
-    }
-
-    @Nested
-    @DisplayName("Validation")
-    class Validation {
-
-        @ParameterizedTest
-        @ValueSource(strings = {"invalid-email", "test@", "@example.com", "test.example.com"})
-        @DisplayName("throws ValidationException for invalid email formats")
-        void patch_throws_for_invalid_email(String invalidEmail) {
-            Long departmentId = 1L;
-            Department existing = Department.builder()
-                    .id(departmentId)
-                    .name("Engineering")
-                    .code("ENG")
-                    .build();
-
-            DepartmentDTO patchDto = DepartmentDTO.builder()
-                    .managerEmail(invalidEmail)
-                    .build();
-
-            when(repository.findById(departmentId)).thenReturn(Optional.of(existing));
-
-            assertThatThrownBy(() -> service.patch(departmentId, patchDto))
-                    .isInstanceOf(ValidationException.class)
-                    .hasMessageContaining("Invalid manager email format");
-        }
-
-        @Test
-        @DisplayName("accepts valid email formats")
-        void patch_accepts_valid_email() {
-            Long departmentId = 1L;
-            Department existing = Department.builder()
-                    .id(departmentId)
-                    .name("Engineering")
-                    .code("ENG")
-                    .build();
-
-            DepartmentDTO patchDto = DepartmentDTO.builder()
-                    .managerEmail("manager@example.com")
-                    .build();
-
-            when(repository.findById(departmentId)).thenReturn(Optional.of(existing));
-            when(repository.save(any(Department.class))).thenReturn(existing);
-
-            assertThatNoException().isThrownBy(() -> service.patch(departmentId, patchDto));
-        }
+    /**
+     * Convert entity to DTO
+     */
+    private DepartmentDTO toDTO(Department department) {
+        return DepartmentDTO.builder()
+                .id(department.getId())
+                .name(department.getName())
+                .code(department.getCode())
+                .description(department.getDescription())
+                .managerEmail(department.getManagerEmail())
+                .build();
     }
 }

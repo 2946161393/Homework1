@@ -3,8 +3,13 @@ package com.example.employee.service;
 import com.example.employee.client.DepartmentClient;
 import com.example.employee.domain.Employee;
 import com.example.employee.dto.*;
-import com.example.employee.exception.*;
 import com.example.employee.repository.EmployeeRepository;
+
+import com.example.exception.common.ValidationException;
+import com.example.exception.external.ExternalServiceException;
+import com.example.exception.resource.DuplicateResourceException;
+import com.example.exception.resource.ResourceNotFoundException;
+
 import feign.FeignException;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
