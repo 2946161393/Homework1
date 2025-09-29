@@ -84,3 +84,4 @@ Running this on AWS would cost approximately $400-500 per month for a small prod
 ## Conclusion
 
 These additions transform our development system into a production-ready architecture. The load balancer and authentication service are must-haves for security and availability. Monitoring and logging are critical for operations. The other components improve performance and make the system more maintainable. We should implement Phase 1 components immediately, then add Phase 2 and 3 based on actual traffic and needs.
+<img width="3840" height="1992" alt="Untitled diagram _ Mermaid Chart-2025-09-29-043604" src="https://github.com/user-attachments/assets/6a54afa1-7434-46e3-913c-118efe79b134" />
