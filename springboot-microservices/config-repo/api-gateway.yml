@@ -12,6 +12,7 @@ spring:
             - Path=/employees/**
           filters:
             - RewritePath=/employees(?<segment>/?.*), /api/v1/employees${segment}
+            - AddRequestHeader=X-API-Version, v1
 
         - id: department-service
           uri: lb://DEPARTMENT-SERVICE
@@ -19,6 +20,15 @@ spring:
             - Path=/departments/**
           filters:
             - RewritePath=/departments(?<segment>/?.*), /api/v1/departments${segment}
+            - AddRequestHeader=X-API-Version, v1
+
+        - id: product-service
+          uri: lb://PRODUCT-SERVICE
+          predicates:
+            - Path=/products/**
+          filters:
+            - RewritePath=/products(?<segment>/?.*), /api/v1/products${segment}
+            - AddRequestHeader=X-API-Version, v1
 
 eureka:
   client:

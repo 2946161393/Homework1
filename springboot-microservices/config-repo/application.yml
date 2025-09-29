@@ -7,9 +7,16 @@ management:
   endpoints:
     web:
       exposure:
-        include: health,info,refresh
+        include: health,info,refresh,prometheus,metrics
 
 feature:
   flags:
     enable-audit: true
-    enable-caching: false
+    enable-caching: true
+    enable-circuit-breaker: true
+
+api:
+  version:
+    current: v1
+    deprecated: []
+    supported: [v1]

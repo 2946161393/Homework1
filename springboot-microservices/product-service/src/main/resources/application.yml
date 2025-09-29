@@ -1,0 +1,74 @@
+spring:
+  application:
+    name: PRODUCT-SERVICE
+
+  #  Redis Configuration
+  redis:
+    host: localhost
+    port: 6379
+    timeout: 2000ms
+  cache:
+    type: redis
+    redis:
+      time-to-live: 300000 # 5 minutes for product cache
+
+server:
+  port: 8083
+
+eureka:
+  client:
+    service-url:
+      defaultZone: http://localhost:8761/eureka
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,prometheus,metrics,circuitbreakers
+  metrics:
+    export:
+      prometheus:
+        enabled: true
+    distribution:
+      percentiles-histogram:
+        http.server.requests: true
+
+# FakeStore API Configuration
+fakestore:
+  api:
+    base-url: https://fakestoreapi.com
+    timeout: 5000 # 5 seconds
+
+# Resilience4j Configuration for External API
+resilience4j:
+  circuitbreaker:
+    instances:
+      fakeStoreApi:
+        registerHealthIndicator: true
+        slidingWindowSize: 10
+        minimumNumberOfCalls: 5
+        permittedNumberOfCallsInHalfOpenState: 3
+        automaticTransitionFromOpenToHalfOpenEnabled: true
+        waitDurationInOpenState: 10s
+        failureRateThreshold: 50
+        eventConsumerBufferSize: 10
+  retry:
+    instances:
+      fakeStoreApi:
+        maxAttempts: 3
+        waitDuration: 2s
+        exponentialBackoffMultiplier: 2
+  timelimiter:
+    instances:
+      fakeStoreApi:
+        timeoutDuration: 5s
+
+logging:
+  level:
+    com.example.product: DEBUG
+    io.github.resilience4j: DEBUG
+  pattern:
+    console: "%d{yyyy-MM-dd HH:mm:ss} - %msg%n"
+    file: "%d{yyyy-MM-dd HH:mm:ss} [%thread] %-5level %logger{36} - %msg%n"
+  file:
+    name: logs/product-service.log

@@ -9,6 +9,7 @@
         <outputRelativeToContentRoot value="true" />
         <module name="api-gateway" />
         <module name="config-server" />
+        <module name="product-service" />
         <module name="department-service" />
         <module name="discovery-service" />
         <module name="employee-service" />
