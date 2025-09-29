@@ -1,9 +1,5 @@
 package com.example.department.service;
 
-public class DepartmentService {
-}
-package com.example.department.service;
-
 import com.example.department.client.EmployeeClient;
 import com.example.department.domain.Department;
 import com.example.department.dto.DepartmentDTO;
